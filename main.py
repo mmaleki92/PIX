@@ -3,6 +3,7 @@ import requests
 from PyQt5.QtWidgets import QApplication, QWidget, QGridLayout, QLabel, QPushButton, QScrollArea, QVBoxLayout, QLineEdit, QSlider
 from PyQt5.QtGui import QPixmap
 from PyQt5.QtCore import Qt, pyqtSignal
+from PyQt5.QtCore import Qt, pyqtSignal, QSize
 
 class ClickableLabel(QLabel):
     clicked = pyqtSignal()
@@ -31,6 +32,7 @@ class ImageGrid(QWidget):
     def __init__(self, image_paths):
         super().__init__()
         self.max_label_size = 100  # Default image label size
+        self.thumbnail_size = QSize(self.max_label_size, self.max_label_size)  # Size of thumbnails
         self.image_cache = {}  # Image caching
 
         self.initUI(image_paths)
@@ -106,7 +108,11 @@ class ImageGrid(QWidget):
                 image.loadFromData(response.content)
             else:
                 image = QPixmap(img_path)
-            self.image_cache[img_path] = image
+
+            # Create a thumbnail of the image
+            thumbnail = image.scaled(self.thumbnail_size, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+            self.image_cache[img_path] = thumbnail
+
         return self.image_cache[img_path]
 
     def updateGrid(self):
