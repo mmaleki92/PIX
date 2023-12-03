@@ -1,6 +1,18 @@
 import fitz  # PyMuPDF
 import os
 
+def identify_image_type(image_bytes):
+    # Check for PNG signature
+    if image_bytes.startswith(b'\x89PNG\r\n\x1a\n'):
+        return 'PNG'
+
+    # Check for JPEG signature
+    elif image_bytes[0:2] == b'\xff\xd8':
+        return 'JPEG'
+
+    else:
+        return 'Unknown format'
+
 def extract_images_from_pdf(pdf_path, output_folder, size_limit):
     # Open the PDF file
     doc = fitz.open(pdf_path)
@@ -18,8 +30,14 @@ def extract_images_from_pdf(pdf_path, output_folder, size_limit):
 
             # Check the size of the image
             if len(image_bytes) >= size_limit:
-                # Define the image's output path
-                image_name = f"{os.path.splitext(os.path.basename(pdf_path))[0]}_page_{i}_img_{image_index}.png"
+                # Identify image type (JPEG or PNG)
+                image_type = identify_image_type(image_bytes)
+                if image_type == 'Unknown format':
+                    continue  # Skip if format is unknown
+
+                # Define the image's output path with the correct extension
+                image_extension = image_type.lower()
+                image_name = f"{os.path.splitext(os.path.basename(pdf_path))[0]}_page_{i}_img_{image_index}.{image_extension}"
                 image_output_path = os.path.join(output_folder, image_name)
 
                 # Save the image
@@ -45,7 +63,6 @@ def extract_images_from_directory(directory_path, output_folder, size_limit, pag
                 if len(doc) <= page_limit:
                     extract_images_from_pdf(pdf_path, output_folder, size_limit)
                 doc.close()
-
 
 # Usage
 directory_path = '/home/drghodrat/Zotero/storage'
