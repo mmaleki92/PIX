@@ -28,8 +28,7 @@ def extract_images_from_pdf(pdf_path, output_folder):
 
     # Close the document
     doc.close()
-
 # Usage
-pdf_path = 'path_to_your_pdf.pdf'
-output_folder = 'path_to_output_folder'
+pdf_path = 'main.pdf'
+output_folder = 'imgs'
 extract_images_from_pdf(pdf_path, output_folder)
