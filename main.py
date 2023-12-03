@@ -1,9 +1,10 @@
 import sys
 import requests
-from PyQt5.QtWidgets import QApplication, QWidget, QGridLayout, QLabel, QPushButton, QScrollArea, QVBoxLayout, QLineEdit, QSlider
+from PyQt5.QtWidgets import QApplication, QWidget, QHBoxLayout, QGridLayout, QLabel, QPushButton, QScrollArea, QVBoxLayout, QLineEdit, QSlider, QCheckBox
 from PyQt5.QtGui import QPixmap
 from PyQt5.QtCore import Qt, pyqtSignal
 from PyQt5.QtCore import Qt, pyqtSignal, QSize
+from PyQt5.QtWidgets import QSplitter
 
 class ClickableLabel(QLabel):
     clicked = pyqtSignal()
@@ -31,24 +32,38 @@ class ClickableLabel(QLabel):
 class ImageGrid(QWidget):
     def __init__(self, image_paths):
         super().__init__()
-        self.max_label_size = 100  # Default image label size
-        self.thumbnail_size = QSize(self.max_label_size, self.max_label_size)  # Size of thumbnails
-        self.image_cache = {}  # Image caching
-
+        self.max_label_size = 100
+        self.thumbnail_size = QSize(self.max_label_size, self.max_label_size)
+        self.image_cache = {}
+        self.use_thumbnails = True  # Default to using thumbnails
         self.initUI(image_paths)
 
     def initUI(self, image_paths):
+        # Main layout is now horizontal
+                # Use QSplitter for resizable grid and sidebar
+        main_layout = QHBoxLayout(self)
+
+        splitter = QSplitter(Qt.Horizontal)
+        main_layout.addWidget(splitter)
+                              
+
+        # Container for the grid and its controls
+        grid_container = QWidget()
+        grid_layout = QVBoxLayout(grid_container)
+        splitter.addWidget(grid_container)
+        
         self.setGeometry(300, 300, 600, 400)
         self.setWindowTitle('Image Viewer')
 
-        layout = QVBoxLayout(self)
+        # Scroll Area for the thumbnails
         scroll_area = QScrollArea(self)
         scroll_area.setWidgetResizable(True)
-        layout.addWidget(scroll_area)
+        grid_layout.addWidget(scroll_area)
         container = QWidget()
         scroll_area.setWidget(container)
         self.grid = QGridLayout(container)
 
+        # Pagination controls
         self.page = 0
         self.page_size = 20
         self.image_paths = image_paths
@@ -56,30 +71,50 @@ class ImageGrid(QWidget):
 
         next_button = QPushButton('Next Page', self)
         next_button.clicked.connect(lambda: self.changePage(1))
-        layout.addWidget(next_button)
+        grid_layout.addWidget(next_button)
 
         prev_button = QPushButton('Previous Page', self)
         prev_button.clicked.connect(lambda: self.changePage(-1))
-        layout.addWidget(prev_button)
+        grid_layout.addWidget(prev_button)
 
+        # Page number label
         self.page_number_label = QLabel(f"Page {self.page + 1}", self)
         self.page_number_label.setAlignment(Qt.AlignCenter)
-        layout.addWidget(self.page_number_label)
+        grid_layout.addWidget(self.page_number_label)
 
+        # Address field for the selected image
         self.address_field = QLineEdit(self)
         self.address_field.setReadOnly(True)
-        layout.addWidget(self.address_field)
+        grid_layout.addWidget(self.address_field)
 
+        # Button to copy the image path to the clipboard
         self.copy_button = QPushButton("Copy to Clipboard", self)
         self.copy_button.clicked.connect(self.copyTextToClipboard)
-        layout.addWidget(self.copy_button)
-        # Adding a slider for zoom control
+        grid_layout.addWidget(self.copy_button)
+
+        # Slider for zoom control
         self.zoom_slider = QSlider(Qt.Horizontal, self)
         self.zoom_slider.setMinimum(10)
         self.zoom_slider.setMaximum(500)
         self.zoom_slider.setValue(self.max_label_size)
         self.zoom_slider.valueChanged.connect(self.onSliderValueChanged)
-        layout.addWidget(self.zoom_slider)
+        grid_layout.addWidget(self.zoom_slider)
+
+        # Toggle button for switching between thumbnails and full-size images
+        self.thumbnail_toggle = QCheckBox("Show Thumbnails", self)
+        self.thumbnail_toggle.setChecked(self.use_thumbnails)
+        self.thumbnail_toggle.stateChanged.connect(self.toggleThumbnails)
+        grid_layout.addWidget(self.thumbnail_toggle)
+
+        # Sidebar for full-size image display
+        self.full_size_image_label = QLabel()
+        self.full_size_image_label.setAlignment(Qt.AlignCenter)
+        splitter.addWidget(self.full_size_image_label)
+
+        # Set a minimum width for the sidebar
+        # Optionally set a minimum size for the grid_container and full_size_image_label
+        grid_container.setMinimumWidth(300)
+        self.full_size_image_label.setMinimumWidth(200)
 
     def wheelEvent(self, event):
         if event.modifiers() & Qt.ControlModifier:
@@ -92,8 +127,13 @@ class ImageGrid(QWidget):
             self.updateGrid()
         self.zoom_slider.setValue(self.max_label_size)
 
+    def toggleThumbnails(self, state):
+        self.use_thumbnails = bool(state)
+        self.updateGrid()
+
     def onSliderValueChanged(self):
         self.max_label_size = self.zoom_slider.value()
+        self.thumbnail_size = QSize(self.max_label_size, self.max_label_size)
         self.updateGrid()
 
     def copyTextToClipboard(self):
@@ -109,11 +149,10 @@ class ImageGrid(QWidget):
             else:
                 image = QPixmap(img_path)
 
-            # Create a thumbnail of the image
-            thumbnail = image.scaled(self.thumbnail_size, Qt.KeepAspectRatio, Qt.SmoothTransformation)
-            self.image_cache[img_path] = thumbnail
+            self.image_cache[img_path] = image
 
         return self.image_cache[img_path]
+
 
     def updateGrid(self):
         for i in reversed(range(self.grid.count())):
@@ -125,21 +164,25 @@ class ImageGrid(QWidget):
         end = min(start + self.page_size, len(self.image_paths))
 
         container_width = self.grid.parent().width() or 500
-        num_images_per_row = max(container_width // self.max_label_size, 1)
+        self.num_images_per_row = max(container_width // self.max_label_size, 1)
 
         for i, img_path in enumerate(self.image_paths[start:end], start=1):
             pixmap = self.load_image(img_path)
-            label = ClickableLabel()
-            
-            # Maintain aspect ratio while fitting the image into max_label_size x max_label_size box
-            scaled_pixmap = pixmap.scaled(self.max_label_size, self.max_label_size, Qt.KeepAspectRatio, Qt.SmoothTransformation)
-            label.setPixmap(scaled_pixmap)
 
-            # Set the label size to be square, but the image will maintain its aspect ratio
+            # Determine if we should use thumbnails
+            if self.use_thumbnails:
+                # Resize according to the current zoom level
+                scaled_pixmap = pixmap.scaled(self.max_label_size, self.max_label_size, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+            else:
+                # Use the original size if not using thumbnails
+                scaled_pixmap = pixmap
+
+            label = ClickableLabel(img_path)
+            label.setPixmap(scaled_pixmap)
             label.setFixedSize(self.max_label_size, self.max_label_size)
             label.clicked.connect(lambda path=img_path: self.onImageClicked(path))
-            row = (i - 1) // num_images_per_row
-            col = (i - 1) % num_images_per_row
+            row = (i - 1) // self.num_images_per_row
+            col = (i - 1) % self.num_images_per_row
             self.grid.addWidget(label, row, col)
 
 
@@ -152,7 +195,10 @@ class ImageGrid(QWidget):
             self.page_number_label.setText(f"Page {self.page + 1}")
 
     def onImageClicked(self, img_path):
-        self.address_field.setText(img_path)
+        # Load the full-size image
+        full_image = self.load_image(img_path)
+        # Update the label in the sidebar with the full-size image
+        self.full_size_image_label.setPixmap(full_image.scaled(self.full_size_image_label.width(), self.full_size_image_label.height(), Qt.KeepAspectRatio))
 
 
 if __name__ == '__main__':
