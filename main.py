@@ -6,6 +6,7 @@ from PyQt5.QtGui import QPixmap
 from PyQt5.QtCore import Qt, pyqtSignal
 from PyQt5.QtWidgets import QLabel  # Add this import
 from PyQt5.QtWidgets import QLineEdit, QPushButton  # Add these imports
+from PyQt5.QtCore import QTimer  # Import QTimer
 
 class ClickableLabel(QLabel):
     clicked = pyqtSignal()
@@ -38,6 +39,12 @@ class ImageGrid(QWidget):
         super().__init__()
         self.max_label_size = 100  # Initialize with a default size
         self.initUI(image_paths)
+
+        # Setup a timer for delayed resize handling
+        self.resize_timer = QTimer(self)
+        self.resize_timer.setInterval(100)  # Set to 100 milliseconds
+        self.resize_timer.timeout.connect(self.delayedResize)
+        self.resize_in_progress = False
 
     def initUI(self, image_paths):
         self.setGeometry(300, 300, 600, 400)
@@ -90,13 +97,20 @@ class ImageGrid(QWidget):
         QApplication.clipboard().setText(text)
         
     def resizeEvent(self, event):
-        # Recalculate the max label size based on the new window size
-        container_width = self.grid.parent().width() or 500  # Default to 500 if width is too small or zero
-        num_images_per_row = 5
-        self.max_label_size = max(container_width // num_images_per_row - 10, 100)  # Ensure a minimum size for the images
-
-        self.updateGrid()  # Update the grid with the new size
+        self.resize_in_progress = True
+        self.resize_timer.start()  # Start the timer
         super(ImageGrid, self).resizeEvent(event)
+
+    def delayedResize(self):
+        if self.resize_in_progress:
+            self.updateGridSize()
+            self.updateGrid()
+            self.resize_in_progress = False
+
+    def updateGridSize(self):
+        container_width = self.grid.parent().width() or 500
+        num_images_per_row = 5
+        self.max_label_size = max(container_width // num_images_per_row - 10, 100)
 
     def load_image(self, img_path):
         if img_path.startswith('http://') or img_path.startswith('https://'):
