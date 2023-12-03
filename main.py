@@ -1,12 +1,8 @@
 import sys
 import requests
-from io import BytesIO
-from PyQt5.QtWidgets import QApplication, QWidget, QGridLayout, QLabel, QPushButton, QScrollArea, QVBoxLayout
+from PyQt5.QtWidgets import QApplication, QWidget, QGridLayout, QLabel, QPushButton, QScrollArea, QVBoxLayout, QLineEdit, QSlider
 from PyQt5.QtGui import QPixmap
 from PyQt5.QtCore import Qt, pyqtSignal
-from PyQt5.QtWidgets import QLabel  # Add this import
-from PyQt5.QtWidgets import QLineEdit, QPushButton  # Add these imports
-from PyQt5.QtCore import QTimer  # Import QTimer
 
 class ClickableLabel(QLabel):
     clicked = pyqtSignal()
@@ -16,7 +12,6 @@ class ClickableLabel(QLabel):
         self.initUI()
 
     def initUI(self):
-        # Basic styling
         self.setStyleSheet("""
             ClickableLabel {
                 border: 2px solid #8f8f91;
@@ -32,25 +27,18 @@ class ClickableLabel(QLabel):
         if event.button() == Qt.LeftButton:
             self.clicked.emit()
 
-
-
 class ImageGrid(QWidget):
     def __init__(self, image_paths):
         super().__init__()
-        self.max_label_size = 100  # Initialize with a default size
-        self.initUI(image_paths)
+        self.max_label_size = 100  # Default image label size
+        self.image_cache = {}  # Image caching
 
-        # Setup a timer for delayed resize handling
-        self.resize_timer = QTimer(self)
-        self.resize_timer.setInterval(100)  # Set to 100 milliseconds
-        self.resize_timer.timeout.connect(self.delayedResize)
-        self.resize_in_progress = False
+        self.initUI(image_paths)
 
     def initUI(self, image_paths):
         self.setGeometry(300, 300, 600, 400)
         self.setWindowTitle('Image Viewer')
 
-        # Initialize layout
         layout = QVBoxLayout(self)
         scroll_area = QScrollArea(self)
         scroll_area.setWidgetResizable(True)
@@ -59,13 +47,11 @@ class ImageGrid(QWidget):
         scroll_area.setWidget(container)
         self.grid = QGridLayout(container)
 
-        # Initialize image list and pagination
         self.page = 0
         self.page_size = 20
         self.image_paths = image_paths
         self.updateGrid()
 
-        # Add navigation buttons
         next_button = QPushButton('Next Page', self)
         next_button.clicked.connect(lambda: self.changePage(1))
         layout.addWidget(next_button)
@@ -73,76 +59,83 @@ class ImageGrid(QWidget):
         prev_button = QPushButton('Previous Page', self)
         prev_button.clicked.connect(lambda: self.changePage(-1))
         layout.addWidget(prev_button)
-        # Page number label
-        self.page_number_label = QLabel(f"Page {self.page + 1}", self)  # Initialize with the first page
-        self.page_number_label.setAlignment(Qt.AlignCenter)  # Center align the text
-        # Text field to display the image address
+
+        self.page_number_label = QLabel(f"Page {self.page + 1}", self)
+        self.page_number_label.setAlignment(Qt.AlignCenter)
+        layout.addWidget(self.page_number_label)
+
         self.address_field = QLineEdit(self)
-        self.address_field.setReadOnly(True)  # Make the field read-only
+        self.address_field.setReadOnly(True)
         layout.addWidget(self.address_field)
 
-        # Copy button
         self.copy_button = QPushButton("Copy to Clipboard", self)
         self.copy_button.clicked.connect(self.copyTextToClipboard)
         layout.addWidget(self.copy_button)
-        # Adjust layout to add page number label
-        layout.addWidget(self.page_number_label)
+        # Adding a slider for zoom control
+        self.zoom_slider = QSlider(Qt.Horizontal, self)
+        self.zoom_slider.setMinimum(10)
+        self.zoom_slider.setMaximum(500)
+        self.zoom_slider.setValue(self.max_label_size)
+        self.zoom_slider.valueChanged.connect(self.onSliderValueChanged)
+        layout.addWidget(self.zoom_slider)
 
+    def wheelEvent(self, event):
+        if event.modifiers() & Qt.ControlModifier:
+            delta = event.angleDelta().y()
+            zoom_factor = 10
+            if delta > 0:  # Scrolled up
+                self.max_label_size += zoom_factor
+            elif delta < 0:  # Scrolled down
+                self.max_label_size = max(self.max_label_size - zoom_factor, 10)
+            self.updateGrid()
+        self.zoom_slider.setValue(self.max_label_size)
 
-    def onImageClicked(self, img_path):
-        self.address_field.setText(img_path)  # Set the image address in the text field
+    def onSliderValueChanged(self):
+        self.max_label_size = self.zoom_slider.value()
+        self.updateGrid()
 
     def copyTextToClipboard(self):
         text = self.address_field.text()
         QApplication.clipboard().setText(text)
-        
-    def resizeEvent(self, event):
-        self.resize_in_progress = True
-        self.resize_timer.start()  # Start the timer
-        super(ImageGrid, self).resizeEvent(event)
-
-    def delayedResize(self):
-        if self.resize_in_progress:
-            self.updateGridSize()
-            self.updateGrid()
-            self.resize_in_progress = False
-
-    def updateGridSize(self):
-        container_width = self.grid.parent().width() or 500
-        num_images_per_row = 5
-        self.max_label_size = max(container_width // num_images_per_row - 10, 100)
 
     def load_image(self, img_path):
-        if img_path.startswith('http://') or img_path.startswith('https://'):
-            response = requests.get(img_path)
-            image = QPixmap()
-            image.loadFromData(response.content)
-            return image
-        else:
-            return QPixmap(img_path)
+        if img_path not in self.image_cache:
+            if img_path.startswith('http://') or img_path.startswith('https://'):
+                response = requests.get(img_path)
+                image = QPixmap()
+                image.loadFromData(response.content)
+            else:
+                image = QPixmap(img_path)
+            self.image_cache[img_path] = image
+        return self.image_cache[img_path]
 
     def updateGrid(self):
-        # Clear existing widgets in the grid
-        for i in reversed(range(self.grid.count())): 
+        for i in reversed(range(self.grid.count())):
             widget = self.grid.itemAt(i).widget()
-            if widget is not None: 
+            if widget is not None:
                 widget.deleteLater()
 
         start = self.page * self.page_size
         end = min(start + self.page_size, len(self.image_paths))
 
-        container_width = self.grid.parent().width() or 500  # Provide a default width if the actual width is too small or zero
-        num_images_per_row = 5
-        max_label_size = max(container_width // num_images_per_row - 10, 100)  # Ensure a minimum size for the images
-
+        container_width = self.grid.parent().width() or 500
+        num_images_per_row = max(container_width // self.max_label_size, 1)
 
         for i, img_path in enumerate(self.image_paths[start:end], start=1):
             pixmap = self.load_image(img_path)
             label = ClickableLabel()
-            label.setPixmap(pixmap.scaled(self.max_label_size, self.max_label_size, Qt.KeepAspectRatio))
-            label.setMaximumSize(self.max_label_size, self.max_label_size)
+            
+            # Maintain aspect ratio while fitting the image into max_label_size x max_label_size box
+            scaled_pixmap = pixmap.scaled(self.max_label_size, self.max_label_size, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+            label.setPixmap(scaled_pixmap)
+
+            # Set the label size to be square, but the image will maintain its aspect ratio
+            label.setFixedSize(self.max_label_size, self.max_label_size)
             label.clicked.connect(lambda path=img_path: self.onImageClicked(path))
-            self.grid.addWidget(label, (i - 1) // num_images_per_row, (i - 1) % num_images_per_row)
+            row = (i - 1) // num_images_per_row
+            col = (i - 1) % num_images_per_row
+            self.grid.addWidget(label, row, col)
+
 
     def changePage(self, direction):
         new_page = self.page + direction
@@ -150,7 +143,7 @@ class ImageGrid(QWidget):
         if 0 <= new_page <= max_page:
             self.page = new_page
             self.updateGrid()
-            self.page_number_label.setText(f"Page {self.page + 1}")  # Update page number label
+            self.page_number_label.setText(f"Page {self.page + 1}")
 
     def onImageClicked(self, img_path):
         self.address_field.setText(img_path)
@@ -158,7 +151,7 @@ class ImageGrid(QWidget):
 
 if __name__ == '__main__':
     app = QApplication(sys.argv)
-    image_paths = ['a1.png', 'a2.png', 'a3.png', 'a1.png', 'a2.png', 'a3.png']*10  # List of image paths or URLs
+    image_paths = ['a1.png', 'a2.png', 'a3.png', 'a1.png', 'a2.png', 'a3.png']*40  # List of image paths or URLs
     ex = ImageGrid(image_paths)
     ex.show()
     sys.exit(app.exec_())
