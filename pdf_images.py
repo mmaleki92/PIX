@@ -17,7 +17,7 @@ def extract_images_from_pdf(pdf_path, output_folder, size_limit):
             image_bytes = base_image["image"]
 
             # Check the size of the image
-            if len(image_bytes) <= size_limit:
+            if len(image_bytes) >= size_limit:
                 # Define the image's output path
                 image_name = f"{os.path.splitext(os.path.basename(pdf_path))[0]}_page_{i}_img_{image_index}.png"
                 image_output_path = os.path.join(output_folder, image_name)
@@ -29,7 +29,7 @@ def extract_images_from_pdf(pdf_path, output_folder, size_limit):
     # Close the document
     doc.close()
 
-def extract_images_from_directory(directory_path, output_folder, size_limit):
+def extract_images_from_directory(directory_path, output_folder, size_limit, page_limit):
     # Create the output directory if it doesn't exist
     if not os.path.exists(output_folder):
         os.makedirs(output_folder)
@@ -39,12 +39,21 @@ def extract_images_from_directory(directory_path, output_folder, size_limit):
         for file in files:
             if file.lower().endswith('.pdf'):
                 pdf_path = os.path.join(root, file)
-                extract_images_from_pdf(pdf_path, output_folder, size_limit)
+
+                # Open the PDF to check the number of pages
+                doc = fitz.open(pdf_path)
+                if len(doc) <= page_limit:
+                    extract_images_from_pdf(pdf_path, output_folder, size_limit)
+                doc.close()
+
 
 # Usage
 directory_path = '/home/drghodrat/Zotero/storage'
 output_folder = 'imgs'
+
 if not os.path.exists(output_folder):
     os.mkdir(output_folder)
-size_limit = 100000  # 100 KB as an example
-extract_images_from_directory(directory_path, output_folder, size_limit)
+
+size_limit = 100000  # Image size limit in bytes (100 KB)
+page_limit = 7  # Maximum number of pages allowed in a PDF to be processed
+extract_images_from_directory(directory_path, output_folder, size_limit, page_limit)
