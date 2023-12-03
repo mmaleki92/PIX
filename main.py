@@ -1,4 +1,5 @@
 import sys
+import os
 import requests
 from PyQt5.QtWidgets import QApplication, QWidget, QHBoxLayout, QGridLayout, QLabel, QPushButton, QScrollArea, QVBoxLayout, QLineEdit, QSlider, QCheckBox
 from PyQt5.QtGui import QPixmap
@@ -220,7 +221,8 @@ class ImageGrid(QWidget):
 
 if __name__ == '__main__':
     app = QApplication(sys.argv)
-    image_paths = ['a1.png', 'a2.png', 'a3.png', 'a1.png', 'a2.png', 'a3.png']*40  # List of image paths or URLs
+    image_paths = os.listdir("imgs") # ['a1.png', 'a2.png', 'a3.png', 'a1.png', 'a2.png', 'a3.png']*40  # List of image paths or URLs
+    image_paths = ["imgs/"+file for file in image_paths]
     ex = ImageGrid(image_paths)
     ex.show()
     sys.exit(app.exec_())
