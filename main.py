@@ -1,11 +1,31 @@
 import sys
 import os
 import requests
-from PyQt5.QtWidgets import QApplication, QWidget, QHBoxLayout, QGridLayout, QLabel, QPushButton, QScrollArea, QVBoxLayout, QLineEdit, QSlider, QCheckBox
+from PyQt5.QtWidgets import QApplication, QDialog, QWidget, QHBoxLayout, QGridLayout, QLabel, QPushButton, QScrollArea, QVBoxLayout, QLineEdit, QSlider, QCheckBox
 from PyQt5.QtGui import QPixmap
 from PyQt5.QtCore import Qt, pyqtSignal
 from PyQt5.QtCore import Qt, pyqtSignal, QSize
 from PyQt5.QtWidgets import QSplitter
+
+
+class ImagePreviewDialog(QDialog):
+    def __init__(self, image_path, parent=None):
+        super(ImagePreviewDialog, self).__init__(parent)
+        self.setWindowTitle("Image Preview")
+        layout = QVBoxLayout(self)
+
+        # Load and display the image
+        pixmap = QPixmap(image_path)
+        label = QLabel()
+        label.setPixmap(pixmap.scaled(600, 600, Qt.KeepAspectRatio, Qt.SmoothTransformation))
+        layout.addWidget(label)
+
+        # Close button
+        close_button = QPushButton("Close")
+        close_button.clicked.connect(self.close)
+        layout.addWidget(close_button)
+
+
 
 class ClickableLabel(QLabel):
     clicked = pyqtSignal()
@@ -176,27 +196,28 @@ class ImageGrid(QWidget):
         start = self.page * self.page_size
         end = min(start + self.page_size, len(self.image_paths))
 
-        # Calculate the number of images per row again in case the window size has changed
         container_width = self.grid.parent().width() or 500
         self.num_images_per_row = max(container_width // self.max_label_size, 1)
 
         for i, img_path in enumerate(self.image_paths[start:end], start=1):
             pixmap = self.load_image(img_path)
 
-            # Determine if we should use thumbnails
-            if self.use_thumbnails:
-                pixmap = pixmap.scaled(self.thumbnail_size, Qt.KeepAspectRatio, Qt.SmoothTransformation)
-            else:
-                # Scale to fit grid box size, maintaining aspect ratio
-                pixmap = pixmap.scaled(self.max_label_size, self.max_label_size, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+            # Scale pixmap to fit self.max_label_size while maintaining aspect ratio
+            scaled_pixmap = pixmap.scaled(self.max_label_size, self.max_label_size, Qt.KeepAspectRatio, Qt.SmoothTransformation)
 
             label = ClickableLabel(img_path)
-            label.setPixmap(pixmap)
-            label.setFixedSize(self.max_label_size, self.max_label_size)
+            label.setPixmap(scaled_pixmap)
+            # Adjust label size to match the scaled pixmap size, ensuring it does not exceed max_label_size
+            label_width = min(scaled_pixmap.width(), self.max_label_size)
+            label_height = min(scaled_pixmap.height(), self.max_label_size)
+            label.setFixedSize(label_width, label_height)
             label.clicked.connect(lambda path=img_path: self.onImageClicked(path))
+            
             row = (i - 1) // self.num_images_per_row
             col = (i - 1) % self.num_images_per_row
             self.grid.addWidget(label, row, col)
+
+
 
 
     def changePage(self, direction):
@@ -207,22 +228,28 @@ class ImageGrid(QWidget):
             self.updateGrid()
             self.page_number_label.setText(f"Page {self.page + 1}")
 
-    def onImageClicked(self, img_path):
-        # Display the image path in the address field
-        self.address_field.setText(img_path)
+    # def onImageClicked(self, img_path):
+    #     # Display the image path in the address field
+    #     self.address_field.setText(img_path)
 
-        # Load the full-size image
-        full_image = self.load_image(img_path)
-        # Calculate the new size: half of the sidebar's width while maintaining the aspect ratio
-        new_width = self.full_size_image_label.width() // 2
-        new_height = int(full_image.height() * new_width / full_image.width())
-        # Update the label in the sidebar with the stretched image
-        self.full_size_image_label.setPixmap(full_image.scaled(new_width, new_height, Qt.KeepAspectRatio))
+    #     # Load the full-size image
+    #     full_image = self.load_image(img_path)
+    #     # Calculate the new size: half of the sidebar's width while maintaining the aspect ratio
+    #     new_width = self.full_size_image_label.width() // 2
+    #     new_height = int(full_image.height() * new_width / full_image.width())
+    #     # Update the label in the sidebar with the stretched image
+    #     self.full_size_image_label.setPixmap(full_image.scaled(new_width, new_height, Qt.KeepAspectRatio))
+
+
+    def onImageClicked(self, img_path):
+        dialog = ImagePreviewDialog(img_path, self)
+        dialog.exec_()
 
 if __name__ == '__main__':
     app = QApplication(sys.argv)
-    image_paths = os.listdir("imgs") # ['a1.png', 'a2.png', 'a3.png', 'a1.png', 'a2.png', 'a3.png']*40  # List of image paths or URLs
-    image_paths = ["imgs/"+file for file in image_paths]
+    image_paths = os.listdir("extracted_images") # ['a1.png', 'a2.png', 'a3.png', 'a1.png', 'a2.png', 'a3.png']*40  # List of image paths or URLs
+    image_paths = ["extracted_images/" + file for file in image_paths]
+
     ex = ImageGrid(image_paths)
     ex.show()
     sys.exit(app.exec_())
