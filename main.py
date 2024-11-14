@@ -1,12 +1,14 @@
 import sys
 import os
+import json
 import requests
-from PyQt5.QtWidgets import QApplication, QDialog, QWidget, QHBoxLayout, QGridLayout, QLabel, QPushButton, QScrollArea, QVBoxLayout, QLineEdit, QSlider, QCheckBox
-from PyQt5.QtGui import QPixmap
-from PyQt5.QtCore import Qt, pyqtSignal
-from PyQt5.QtCore import Qt, pyqtSignal, QSize
-from PyQt5.QtWidgets import QSplitter
 
+from PyQt5.QtWidgets import (QApplication, QDialog, QWidget, QHBoxLayout,
+                              QGridLayout, QLabel, QPushButton, QScrollArea, QFileDialog,
+                                QVBoxLayout, QLineEdit, QSlider, QCheckBox, QSplitter)
+from PyQt5.QtGui import QPixmap
+from PyQt5.QtCore import Qt, pyqtSignal, QSize
+from image_extraction import extract_images_from_directory
 
 class ImagePreviewDialog(QDialog):
     def __init__(self, image_path, parent=None):
@@ -26,10 +28,9 @@ class ImagePreviewDialog(QDialog):
         layout.addWidget(close_button)
 
 
-
 class ClickableLabel(QLabel):
     clicked = pyqtSignal()
-
+    double_clicked = pyqtSignal()  # Signal for double-click event
     def __init__(self, parent=None):
         super(ClickableLabel, self).__init__(parent)
         self.initUI()
@@ -49,6 +50,9 @@ class ClickableLabel(QLabel):
     def mousePressEvent(self, event):
         if event.button() == Qt.LeftButton:
             self.clicked.emit()
+    def mouseDoubleClickEvent(self, event):
+        if event.button() == Qt.LeftButton:
+            self.double_clicked.emit()  # Emit double-click signal
 
 class ImageGrid(QWidget):
     def __init__(self, image_paths):
@@ -57,6 +61,11 @@ class ImageGrid(QWidget):
         self.thumbnail_size = QSize(self.max_label_size, self.max_label_size)
         self.image_cache = {}
         self.use_thumbnails = True  # Default to using thumbnails
+        if os.path.exists("images_metadata.json"):
+            self.metadata = self.load_metadata("images_metadata.json")  # Load JSON metadata
+        else:
+            self.metadata = {}
+        self.extracted_image_paths = []  # Store extracted image paths
         self.initUI(image_paths)
 
     def initUI(self, image_paths):
@@ -70,7 +79,21 @@ class ImageGrid(QWidget):
         grid_container = QWidget()
         grid_layout = QVBoxLayout(grid_container)
         splitter.addWidget(grid_container)
-
+        
+        extraction_layout = QHBoxLayout()
+        
+        # Button to open directory selection dialog
+        self.path_button = QPushButton('Set Path', self)
+        self.path_button.clicked.connect(self.openPathDialog)  # Connect to method
+        extraction_layout.addWidget(self.path_button)
+        
+        # Extraction button
+        extract = QPushButton('Extract', self)
+        extract.clicked.connect(self.extractImages)  # Connect to extraction method
+        extraction_layout.addWidget(extract)
+        
+        grid_layout.addLayout(extraction_layout)
+        
         # Sidebar for full-size image display and additional controls
         sidebar = QWidget()
         sidebar_layout = QVBoxLayout(sidebar)
@@ -87,13 +110,11 @@ class ImageGrid(QWidget):
         scroll_area.setWidget(container)
         self.grid = QGridLayout(container)
 
-        # Pagination controls
+        # Pagination controls and other widgets
         self.page = 0
         self.page_size = 40
         self.image_paths = image_paths
-        self.updateGrid()
-
-        # Layout for pagination controls
+        self.updateGrid()        # Layout for pagination controls
         pagination_layout = QHBoxLayout()
         grid_layout.addLayout(pagination_layout)
 
@@ -149,6 +170,29 @@ class ImageGrid(QWidget):
         # Adjust the splitter to give 1/3 of the window to the sidebar
         splitter.setSizes([900, 300])  # Adjust these values as needed
 
+    def load_metadata(self, metadata_path):
+        with open(metadata_path, 'r') as f:
+            return json.load(f)
+
+    def openPathDialog(self):
+        # Open a file dialog to select a directory
+        dir_path = QFileDialog.getExistingDirectory(self, "Select Image Directory")
+        if dir_path:
+            self.dir_path = dir_path  # Store the selected directory path
+
+    def extractImages(self):
+        if not hasattr(self, 'dir_path') or not self.dir_path:
+            return  # No directory path selected, do nothing
+        
+        output_folder = 'extracted_images'
+        size_limit = 1000  # 100 KB
+        page_limit = 50
+        extract_images_from_directory(self.dir_path, output_folder, size_limit, page_limit)
+
+        # Set new image paths based on the extracted images
+        self.extracted_image_paths = [os.path.join(output_folder, file) for file in os.listdir(output_folder) if file.endswith(('.png', '.jpg', '.jpeg'))]
+        self.page = 0  # Reset to the first page
+        self.updateGrid()  # Refresh the grid with new images
 
     def wheelEvent(self, event):
         if event.modifiers() & Qt.ControlModifier:
@@ -160,6 +204,10 @@ class ImageGrid(QWidget):
                 self.max_label_size = max(self.max_label_size - zoom_factor, 10)
             self.updateGrid()
         self.zoom_slider.setValue(self.max_label_size)
+
+    def openPreviewDialog(self, img_path):
+        dialog = ImagePreviewDialog(img_path, self)
+        dialog.exec_()
 
     def toggleThumbnails(self, state):
         self.use_thumbnails = bool(state)
@@ -175,31 +223,26 @@ class ImageGrid(QWidget):
 
     def load_image(self, img_path):
         if img_path not in self.image_cache:
-            if img_path.startswith('http://') or img_path.startswith('https://'):
-                response = requests.get(img_path)
-                image = QPixmap()
-                image.loadFromData(response.content)
-            else:
-                image = QPixmap(img_path)
-
+            image = QPixmap(img_path)
             self.image_cache[img_path] = image
-
         return self.image_cache[img_path]
 
-
     def updateGrid(self):
+        # Clear the existing grid layout items
         for i in reversed(range(self.grid.count())):
             widget = self.grid.itemAt(i).widget()
             if widget is not None:
                 widget.deleteLater()
 
+        # Use the extracted image paths if extraction has occurred
+        image_paths_to_display = self.extracted_image_paths or self.image_paths
         start = self.page * self.page_size
-        end = min(start + self.page_size, len(self.image_paths))
+        end = min(start + self.page_size, len(image_paths_to_display))
 
         container_width = self.grid.parent().width() or 500
         self.num_images_per_row = max(container_width // self.max_label_size, 1)
 
-        for i, img_path in enumerate(self.image_paths[start:end], start=1):
+        for i, img_path in enumerate(image_paths_to_display[start:end], start=1):
             pixmap = self.load_image(img_path)
 
             # Scale pixmap to fit self.max_label_size while maintaining aspect ratio
@@ -207,49 +250,42 @@ class ImageGrid(QWidget):
 
             label = ClickableLabel(img_path)
             label.setPixmap(scaled_pixmap)
-            # Adjust label size to match the scaled pixmap size, ensuring it does not exceed max_label_size
-            label_width = min(scaled_pixmap.width(), self.max_label_size)
-            label_height = min(scaled_pixmap.height(), self.max_label_size)
-            label.setFixedSize(label_width, label_height)
+            label.setFixedSize(min(scaled_pixmap.width(), self.max_label_size), min(scaled_pixmap.height(), self.max_label_size))
+
+            # Connect click and double-click signals
             label.clicked.connect(lambda path=img_path: self.onImageClicked(path))
-            
+            label.double_clicked.connect(lambda path=img_path: self.openPreviewDialog(path))
+
             row = (i - 1) // self.num_images_per_row
             col = (i - 1) % self.num_images_per_row
             self.grid.addWidget(label, row, col)
 
-
-
-
     def changePage(self, direction):
         new_page = self.page + direction
-        max_page = (len(self.image_paths) - 1) // self.page_size
+        max_page = (len(self.extracted_image_paths) - 1) // self.page_size if self.extracted_image_paths else (len(self.image_paths) - 1) // self.page_size
         if 0 <= new_page <= max_page:
             self.page = new_page
             self.updateGrid()
             self.page_number_label.setText(f"Page {self.page + 1}")
 
-    # def onImageClicked(self, img_path):
-    #     # Display the image path in the address field
-    #     self.address_field.setText(img_path)
-
-    #     # Load the full-size image
-    #     full_image = self.load_image(img_path)
-    #     # Calculate the new size: half of the sidebar's width while maintaining the aspect ratio
-    #     new_width = self.full_size_image_label.width() // 2
-    #     new_height = int(full_image.height() * new_width / full_image.width())
-    #     # Update the label in the sidebar with the stretched image
-    #     self.full_size_image_label.setPixmap(full_image.scaled(new_width, new_height, Qt.KeepAspectRatio))
-
-
     def onImageClicked(self, img_path):
-        dialog = ImagePreviewDialog(img_path, self)
-        dialog.exec_()
+        # Extract the image ID from the filename
+        image_id = os.path.splitext(os.path.basename(img_path))[0]
+
+        # Update the address field with the image path
+        self.address_field.setText(img_path)
+
+        # Display metadata if available
+        metadata = self.metadata.get(image_id, {})
+        print(metadata)
+
+        self.updateGrid()
 
 if __name__ == '__main__':
     app = QApplication(sys.argv)
-    image_paths = os.listdir("extracted_images") # ['a1.png', 'a2.png', 'a3.png', 'a1.png', 'a2.png', 'a3.png']*40  # List of image paths or URLs
-    image_paths = ["extracted_images/" + file for file in image_paths]
+    # image_paths = os.listdir("extracted_images") # ['a1.png', 'a2.png', 'a3.png', 'a1.png', 'a2.png', 'a3.png']*40  # List of image paths or URLs
+    # image_paths = ["extracted_images/" + file for file in image_paths]
 
-    ex = ImageGrid(image_paths)
+    ex = ImageGrid("extracted_images")
     ex.show()
     sys.exit(app.exec_())
