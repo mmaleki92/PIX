@@ -225,6 +225,8 @@ class ImageGrid(QWidget):
         # Set new image paths based on the extracted images
         self.extracted_image_paths = [os.path.join(output_folder, file) for file in os.listdir(output_folder) if file.endswith(('.png', '.jpg', '.jpeg'))]
         self.page = 0  # Reset to the first page
+        self.metadata = self.load_metadata("images_metadata.json")  # Load JSON metadata
+
         self.updateGrid()  # Refresh the grid with new images
 
     def wheelEvent(self, event):
@@ -320,7 +322,6 @@ class ImageGrid(QWidget):
             label = QLabel(f"{key}:")
             value_label = QLabel(str(value))
             self.info_form.addRow(label, value_label)
-
 
 if __name__ == '__main__':
     app = QApplication(sys.argv)
