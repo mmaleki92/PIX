@@ -9,23 +9,21 @@ from PyQt5.QtGui import QPixmap
 from PyQt5.QtCore import Qt, pyqtSignal, QSize
 from image_extraction import extract_images_from_directory
 
+
 class ImagePreviewDialog(QDialog):
     def __init__(self, image_path, parent=None):
         super(ImagePreviewDialog, self).__init__(parent)
         self.setWindowTitle("Image Preview")
         layout = QVBoxLayout(self)
 
-        # Load and display the image
         pixmap = QPixmap(image_path)
         label = QLabel()
         label.setPixmap(pixmap.scaled(600, 600, Qt.KeepAspectRatio, Qt.SmoothTransformation))
         layout.addWidget(label)
 
-        # Close button
         close_button = QPushButton("Close")
         close_button.clicked.connect(self.close)
         layout.addWidget(close_button)
-
 
 class ClickableLabel(QLabel):
     clicked = pyqtSignal()
@@ -54,75 +52,76 @@ class ClickableLabel(QLabel):
             self.double_clicked.emit()  # Emit double-click signal
 
 class ImageGrid(QWidget):
-    def __init__(self, extraction_path):
+    last_dir_path = None  # Class variable to remember the last used directory path
+
+    def __init__(self, extraction_path="extracted_images"):
         super().__init__()
         self.max_label_size = 100
         self.thumbnail_size = QSize(self.max_label_size, self.max_label_size)
         self.image_cache = {}
-        self.use_thumbnails = True  # Default to using thumbnails
+        self.use_thumbnails = True
+        self.page = 0
+        self.page_size = 12  # Adjust the number of images per page
+
+        # Load metadata if available
         if os.path.exists("images_metadata.json"):
             self.metadata = self.load_metadata("images_metadata.json")  # Load JSON metadata
         else:
             self.metadata = {}
 
-        if os.path.exists(extraction_path):
-            image_paths = os.listdir(extraction_path)
-            self.extracted_image_paths = [os.path.join(extraction_path, file) for file in image_paths]
+        # Check if extracted images are already present and load them
+        if os.path.exists(extraction_path) and os.listdir(extraction_path):
+            self.extracted_image_paths = [os.path.join(extraction_path, file) for file in os.listdir(extraction_path) if file.endswith(('.png', '.jpg', '.jpeg'))]
         else:
-            self.extracted_image_paths = []  # Store extracted image paths
+            self.extracted_image_paths = []
+
         self.initUI(extraction_path)
+        
+        # Load and display the grid of images if extracted images are found
+        self.updateGrid()  # Call this to load images initially if they exist
 
     def initUI(self, image_paths):
-        # Main layout is now horizontal
-        self.info_form = QFormLayout()
-
         main_layout = QHBoxLayout(self)
-
         splitter = QSplitter(Qt.Horizontal)
         main_layout.addWidget(splitter)
 
-        # Container for the grid and its controls
         grid_container = QWidget()
         grid_layout = QVBoxLayout(grid_container)
-        self.show_path = QLabel("") 
-        grid_layout.addWidget(self.show_path)
         splitter.addWidget(grid_container)
         
         extraction_layout = QHBoxLayout()
         
-        # Button to open directory selection dialog
         self.path_button = QPushButton('Set Path', self)
-        self.path_button.clicked.connect(self.openPathDialog)  # Connect to method
+        self.path_button.clicked.connect(self.openPathDialog)
         extraction_layout.addWidget(self.path_button)
         
-        # Extraction button
         extract = QPushButton('Extract', self)
-        extract.clicked.connect(self.extractImages)  # Connect to extraction method
+        extract.clicked.connect(self.extractImages)
         extraction_layout.addWidget(extract)
         
-        # Size limit input field (in KB)
+        # Label for size limit
+        size_label = QLabel("Size Limit (KB):")
         self.size_limit_input = QLineEdit(self)
-        self.size_limit_input.setPlaceholderText("Size Limit (KB)")
-        self.size_limit_input.setText("1000")  # Default value
+        self.size_limit_input.setText("1000")
+        extraction_layout.addWidget(size_label)
         extraction_layout.addWidget(self.size_limit_input)
 
-        # Page limit input field
+        # Label for page limit
+        page_label = QLabel("Page Limit:")
         self.page_limit_input = QLineEdit(self)
-        self.page_limit_input.setPlaceholderText("Page Limit")
-        self.page_limit_input.setText("50")  # Default value
+        self.page_limit_input.setText("50")
+        extraction_layout.addWidget(page_label)
         extraction_layout.addWidget(self.page_limit_input)
         
         grid_layout.addLayout(extraction_layout)
         
-        # Sidebar for full-size image display and additional controls
         sidebar = QWidget()
         sidebar_layout = QVBoxLayout(sidebar)
         splitter.addWidget(sidebar)
 
-        self.setGeometry(300, 300, 600, 400)
+        self.setGeometry(300, 300, 800, 500)
         self.setWindowTitle('Image Viewer')
 
-        # Scroll Area for the thumbnails
         scroll_area = QScrollArea(self)
         scroll_area.setWidgetResizable(True)
         grid_layout.addWidget(scroll_area)
@@ -130,46 +129,33 @@ class ImageGrid(QWidget):
         scroll_area.setWidget(container)
         self.grid = QGridLayout(container)
 
-        # Pagination controls and other widgets
-        self.page = 0
-        self.page_size = 40
-        self.image_paths = image_paths
-        self.updateGrid()        # Layout for pagination controls
         pagination_layout = QHBoxLayout()
         grid_layout.addLayout(pagination_layout)
 
-        # Previous button
         prev_button = QPushButton('<', self)
         prev_button.clicked.connect(lambda: self.changePage(-1))
         pagination_layout.addWidget(prev_button)
 
-        # Page number label
-        self.page_number_label = QLabel(f"Page {self.page + 1}", self)
-        self.page_number_label.setAlignment(Qt.AlignCenter)
+        self.page_number_label = QLabel("Page 1", self)
+        self.page_number_label.setAlignment(Qt.AlignCenter)        
         pagination_layout.addWidget(self.page_number_label)
 
-        # Next button
         next_button = QPushButton('>', self)
         next_button.clicked.connect(lambda: self.changePage(1))
         pagination_layout.addWidget(next_button)
         
-        # Address field for the selected image
         self.address_field = QLineEdit(self)
         self.address_field.setReadOnly(True)
         sidebar_layout.addWidget(self.address_field)
 
-        # Button to copy the image path to the clipboard
         self.copy_button = QPushButton("Copy to Clipboard", self)
         self.copy_button.clicked.connect(self.copyTextToClipboard)
         sidebar_layout.addWidget(self.copy_button)
-        # Create a QWidget to contain the QFormLayout
-        info_form_widget = QWidget(self)
-        info_form_widget.setLayout(self.info_form)
 
-        # Now add the QWidget to the sidebar layout
+        info_form_widget = QWidget(self)
+        self.info_form = QFormLayout(info_form_widget)
         sidebar_layout.addWidget(info_form_widget)
 
-        # Slider for zoom control
         self.zoom_slider = QSlider(Qt.Horizontal, self)
         self.zoom_slider.setMinimum(10)
         self.zoom_slider.setMaximum(500)
@@ -177,25 +163,15 @@ class ImageGrid(QWidget):
         self.zoom_slider.valueChanged.connect(self.onSliderValueChanged)
         grid_layout.addWidget(self.zoom_slider)
 
-        # Toggle button for switching between thumbnails and full-size images
         self.thumbnail_toggle = QCheckBox("Show Thumbnails", self)
         self.thumbnail_toggle.setChecked(self.use_thumbnails)
         self.thumbnail_toggle.stateChanged.connect(self.toggleThumbnails)
         grid_layout.addWidget(self.thumbnail_toggle)
 
-        # Full-size image label
         self.full_size_image_label = QLabel()
-        self.full_size_image_label.setAlignment(Qt.AlignCenter)
         sidebar_layout.addWidget(self.full_size_image_label)
-
-        # Set a minimum width for the sidebar and grid container
-        grid_container.setMinimumWidth(300)
-        sidebar.setMinimumWidth(200)
-        self.full_size_image_label.setMinimumWidth(200)
-
-        # Adjust the splitter to give 1/3 of the window to the sidebar
-        splitter.setSizes([900, 300])  # Adjust these values as needed
-
+        splitter.setSizes([900, 300])
+    
     def load_metadata(self, metadata_path):
         with open(metadata_path, 'r') as f:
             return json.load(f)
@@ -206,26 +182,25 @@ class ImageGrid(QWidget):
         if dir_path:
             self.dir_path = dir_path  # Store the selected directory path
             self.show_path.setText(dir_path)
+            ImageGrid.last_dir_path = dir_path
 
     def extractImages(self):
         if not hasattr(self, 'dir_path') or not self.dir_path:
-            return  # No directory path selected, do nothing
-        
-        # Retrieve size and page limits from the input fields
+            return
+
         try:
-            size_limit = int(self.size_limit_input.text()) * 1024  # Convert KB to bytes
+            size_limit = int(self.size_limit_input.text()) * 1024
             page_limit = int(self.page_limit_input.text())
         except ValueError:
-            # Handle invalid input (e.g., non-integer values)
             return
         
         output_folder = 'extracted_images'
         extract_images_from_directory(self.dir_path, output_folder, size_limit, page_limit)
 
-        # Set new image paths based on the extracted images
         self.extracted_image_paths = [os.path.join(output_folder, file) for file in os.listdir(output_folder) if file.endswith(('.png', '.jpg', '.jpeg'))]
-        self.page = 0  # Reset to the first page
-        self.updateGrid()  # Refresh the grid with new images
+        self.page = 0
+        self.updateGrid()
+
 
     def wheelEvent(self, event):
         if event.modifiers() & Qt.ControlModifier:
@@ -261,11 +236,11 @@ class ImageGrid(QWidget):
         return self.image_cache[img_path]
 
     def updateGrid(self):
-        # Clear the existing grid layout items
         for i in reversed(range(self.grid.count())):
             widget = self.grid.itemAt(i).widget()
-            if widget is not None:
+            if widget:
                 widget.deleteLater()
+
 
         # Use the extracted image paths if extraction has occurred
         image_paths_to_display = self.extracted_image_paths or self.image_paths
@@ -294,12 +269,9 @@ class ImageGrid(QWidget):
             self.grid.addWidget(label, row, col)
 
     def changePage(self, direction):
-        new_page = self.page + direction
-        max_page = (len(self.extracted_image_paths) - 1) // self.page_size if self.extracted_image_paths else (len(self.image_paths) - 1) // self.page_size
-        if 0 <= new_page <= max_page:
-            self.page = new_page
-            self.updateGrid()
-            self.page_number_label.setText(f"Page {self.page + 1}")
+        self.page += direction
+        self.updateGrid()
+        self.page_number_label.setText(f"Page {self.page + 1}")
 
     def onImageClicked(self, img_path):
         # Extract the image ID from the filename
