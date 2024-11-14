@@ -308,10 +308,13 @@ class ImageGrid(QWidget):
         # Update the address field with the image path
         self.address_field.setText(img_path)
 
+        if os.path.exists("images_metadata.json"):
+            self.metadata = self.load_metadata("images_metadata.json")  # Load JSON metadata
+
         # Clear previous metadata (if any)
         for i in reversed(range(self.info_form.rowCount())):
             self.info_form.removeRow(i)
-
+        
         # Retrieve the metadata for the clicked image
         metadata = self.metadata.get(image_id, {})
 
