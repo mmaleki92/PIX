@@ -1,7 +1,6 @@
 import sys
 import os
 import json
-import requests
 
 from PyQt5.QtWidgets import (QApplication, QDialog, QWidget, QHBoxLayout,
                               QGridLayout, QLabel, QPushButton, QScrollArea, QFileDialog,
@@ -78,6 +77,8 @@ class ImageGrid(QWidget):
         # Container for the grid and its controls
         grid_container = QWidget()
         grid_layout = QVBoxLayout(grid_container)
+        self.show_path = QLabel("") 
+        grid_layout.addWidget(self.show_path)
         splitter.addWidget(grid_container)
         
         extraction_layout = QHBoxLayout()
@@ -91,6 +92,18 @@ class ImageGrid(QWidget):
         extract = QPushButton('Extract', self)
         extract.clicked.connect(self.extractImages)  # Connect to extraction method
         extraction_layout.addWidget(extract)
+        
+        # Size limit input field (in KB)
+        self.size_limit_input = QLineEdit(self)
+        self.size_limit_input.setPlaceholderText("Size Limit (KB)")
+        self.size_limit_input.setText("1000")  # Default value
+        extraction_layout.addWidget(self.size_limit_input)
+
+        # Page limit input field
+        self.page_limit_input = QLineEdit(self)
+        self.page_limit_input.setPlaceholderText("Page Limit")
+        self.page_limit_input.setText("50")  # Default value
+        extraction_layout.addWidget(self.page_limit_input)
         
         grid_layout.addLayout(extraction_layout)
         
@@ -179,14 +192,21 @@ class ImageGrid(QWidget):
         dir_path = QFileDialog.getExistingDirectory(self, "Select Image Directory")
         if dir_path:
             self.dir_path = dir_path  # Store the selected directory path
+            self.show_path.setText(dir_path)
 
     def extractImages(self):
         if not hasattr(self, 'dir_path') or not self.dir_path:
             return  # No directory path selected, do nothing
         
+        # Retrieve size and page limits from the input fields
+        try:
+            size_limit = int(self.size_limit_input.text()) * 1024  # Convert KB to bytes
+            page_limit = int(self.page_limit_input.text())
+        except ValueError:
+            # Handle invalid input (e.g., non-integer values)
+            return
+        
         output_folder = 'extracted_images'
-        size_limit = 1000  # 100 KB
-        page_limit = 50
         extract_images_from_directory(self.dir_path, output_folder, size_limit, page_limit)
 
         # Set new image paths based on the extracted images
@@ -283,9 +303,6 @@ class ImageGrid(QWidget):
 
 if __name__ == '__main__':
     app = QApplication(sys.argv)
-    # image_paths = os.listdir("extracted_images") # ['a1.png', 'a2.png', 'a3.png', 'a1.png', 'a2.png', 'a3.png']*40  # List of image paths or URLs
-    # image_paths = ["extracted_images/" + file for file in image_paths]
-
     ex = ImageGrid("extracted_images")
     ex.show()
     sys.exit(app.exec_())
