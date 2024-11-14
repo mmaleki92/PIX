@@ -31,7 +31,7 @@ def process_image(doc, xref, output_folder, pdf_page_num, image_index, size_limi
     image_output_path = os.path.join(output_folder, image_name)
     save_image(image_bytes, image_output_path)
 
-    # Append image metadata
+    # Update image metadata or add new entry
     metadata[unique_id] = {
         "file_name": doc.name,
         "page_number": pdf_page_num,
@@ -56,7 +56,13 @@ def extract_images_from_directory(directory_path, output_folder, size_limit, pag
     if not os.path.exists(output_folder):
         os.makedirs(output_folder)
 
+    # Load existing metadata if it exists
     metadata = {}
+    metadata_file_path = "images_metadata.json"
+    if os.path.exists(metadata_file_path):
+        with open(metadata_file_path, "r") as json_file:
+            metadata = json.load(json_file)
+
     for root, dirs, files in os.walk(directory_path):
         for file in files:
             if file.lower().endswith('.pdf'):
@@ -66,7 +72,6 @@ def extract_images_from_directory(directory_path, output_folder, size_limit, pag
                     extract_images_from_pdf(pdf_path, output_folder, size_limit, metadata)
                 doc.close()
 
-    # Save metadata to JSON file
-    with open("images_metadata.json", "w") as json_file:
+    # Save updated metadata to JSON file
+    with open(metadata_file_path, "w") as json_file:
         json.dump(metadata, json_file, indent=4)
-
