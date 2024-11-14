@@ -1,0 +1,3 @@
+**/*.pyc
+images_metadata.json
+extracted_images/*
