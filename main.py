@@ -2,7 +2,7 @@ import sys
 import os
 import json
 
-from PyQt5.QtWidgets import (QApplication, QDialog, QWidget, QHBoxLayout,
+from PyQt5.QtWidgets import (QApplication, QDialog, QWidget, QHBoxLayout, QFormLayout,
                               QGridLayout, QLabel, QPushButton, QScrollArea, QFileDialog,
                                 QVBoxLayout, QLineEdit, QSlider, QCheckBox, QSplitter)
 from PyQt5.QtGui import QPixmap
@@ -54,7 +54,7 @@ class ClickableLabel(QLabel):
             self.double_clicked.emit()  # Emit double-click signal
 
 class ImageGrid(QWidget):
-    def __init__(self, image_paths):
+    def __init__(self, extraction_path):
         super().__init__()
         self.max_label_size = 100
         self.thumbnail_size = QSize(self.max_label_size, self.max_label_size)
@@ -64,11 +64,18 @@ class ImageGrid(QWidget):
             self.metadata = self.load_metadata("images_metadata.json")  # Load JSON metadata
         else:
             self.metadata = {}
-        self.extracted_image_paths = []  # Store extracted image paths
-        self.initUI(image_paths)
+
+        if os.path.exists(extraction_path):
+            image_paths = os.listdir(extraction_path)
+            self.extracted_image_paths = [os.path.join(extraction_path, file) for file in image_paths]
+        else:
+            self.extracted_image_paths = []  # Store extracted image paths
+        self.initUI(extraction_path)
 
     def initUI(self, image_paths):
         # Main layout is now horizontal
+        self.info_form = QFormLayout()
+
         main_layout = QHBoxLayout(self)
 
         splitter = QSplitter(Qt.Horizontal)
@@ -145,7 +152,7 @@ class ImageGrid(QWidget):
         next_button = QPushButton('>', self)
         next_button.clicked.connect(lambda: self.changePage(1))
         pagination_layout.addWidget(next_button)
-
+        
         # Address field for the selected image
         self.address_field = QLineEdit(self)
         self.address_field.setReadOnly(True)
@@ -155,6 +162,12 @@ class ImageGrid(QWidget):
         self.copy_button = QPushButton("Copy to Clipboard", self)
         self.copy_button.clicked.connect(self.copyTextToClipboard)
         sidebar_layout.addWidget(self.copy_button)
+        # Create a QWidget to contain the QFormLayout
+        info_form_widget = QWidget(self)
+        info_form_widget.setLayout(self.info_form)
+
+        # Now add the QWidget to the sidebar layout
+        sidebar_layout.addWidget(info_form_widget)
 
         # Slider for zoom control
         self.zoom_slider = QSlider(Qt.Horizontal, self)
@@ -295,11 +308,19 @@ class ImageGrid(QWidget):
         # Update the address field with the image path
         self.address_field.setText(img_path)
 
-        # Display metadata if available
-        metadata = self.metadata.get(image_id, {})
-        print(metadata)
+        # Clear previous metadata (if any)
+        for i in reversed(range(self.info_form.rowCount())):
+            self.info_form.removeRow(i)
 
-        self.updateGrid()
+        # Retrieve the metadata for the clicked image
+        metadata = self.metadata.get(image_id, {})
+
+        # Display metadata if available
+        for key, value in metadata.items():
+            label = QLabel(f"{key}:")
+            value_label = QLabel(str(value))
+            self.info_form.addRow(label, value_label)
+
 
 if __name__ == '__main__':
     app = QApplication(sys.argv)
