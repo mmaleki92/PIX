@@ -29,7 +29,7 @@ jobs:
       - name: Build Linux executable with PyInstaller
         run: |
           pip install pyinstaller
-          pyinstaller --onefile --windowed --icon=icon.png main.py
+          pyinstaller --onefile --windowed main.py
 
       - name: Upload Linux artifact
         uses: actions/upload-artifact@v4  # Updated to v4
@@ -57,7 +57,7 @@ jobs:
       - name: Build Windows executable with PyInstaller
         run: |
           pip install pyinstaller
-          pyinstaller --onefile --windowed --icon=icon.png main.py
+          pyinstaller --onefile --windowed --icon=icon.ico main.py
 
       - name: Upload Windows artifact
         uses: actions/upload-artifact@v4  # Updated to v4
