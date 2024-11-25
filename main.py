@@ -1,6 +1,7 @@
 import sys
 import os
 import json
+import math
 
 from PyQt5.QtWidgets import (QApplication, QDialog, QWidget, QHBoxLayout, QFormLayout,
                               QGridLayout, QLabel, QPushButton, QScrollArea, QFileDialog,
@@ -8,7 +9,6 @@ from PyQt5.QtWidgets import (QApplication, QDialog, QWidget, QHBoxLayout, QFormL
 from PyQt5.QtGui import QPixmap
 from PyQt5.QtCore import Qt, pyqtSignal, QSize
 from image_extraction import extract_images_from_directory
-
 
 class ImagePreviewDialog(QDialog):
     def __init__(self, image_path, parent=None):
@@ -53,7 +53,7 @@ class ClickableLabel(QLabel):
 
 class ImageGrid(QWidget):
     last_dir_path = None  # Class variable to remember the last used directory path
-
+    signal_direction = pyqtSignal(int)
     def __init__(self, extraction_path="extracted_images"):
         super().__init__()
         self.max_label_size = 100
@@ -61,7 +61,8 @@ class ImageGrid(QWidget):
         self.image_cache = {}
         self.use_thumbnails = True
         self.page = 0
-        self.page_size = 12  # Adjust the number of images per page
+        self.images_per_page = 12  # Adjust the number of images per page
+        self.num_of_all_images = None
 
         # Load metadata if available
         if os.path.exists("images_metadata.json"):
@@ -69,14 +70,16 @@ class ImageGrid(QWidget):
         else:
             self.metadata = {}
 
-        # Check if extracted images are already present and load them
         if os.path.exists(extraction_path) and os.listdir(extraction_path):
             self.extracted_image_paths = [os.path.join(extraction_path, file) for file in os.listdir(extraction_path) if file.endswith(('.png', '.jpg', '.jpeg'))]
+            self.num_of_all_images = len(self.extracted_image_paths)
         else:
             self.extracted_image_paths = []
 
         self.initUI(extraction_path)
-        
+
+        self.signal_direction.connect(self.change_direction_visibility)
+        self.change_direction_visibility(self.page)
         # Load and display the grid of images if extracted images are found
         self.updateGrid()  # Call this to load images initially if they exist
 
@@ -132,18 +135,18 @@ class ImageGrid(QWidget):
         pagination_layout = QHBoxLayout()
         grid_layout.addLayout(pagination_layout)
 
-        prev_button = QPushButton('<', self)
-        prev_button.clicked.connect(lambda: self.changePage(-1))
-        pagination_layout.addWidget(prev_button)
+        self.prev_button = QPushButton('<', self)
+        self.prev_button.clicked.connect(lambda: self.changePage(-1))
+        pagination_layout.addWidget(self.prev_button)
 
         self.page_number_label = QLabel("Page 1", self)
         self.page_number_label.setAlignment(Qt.AlignCenter)        
         pagination_layout.addWidget(self.page_number_label)
 
-        next_button = QPushButton('>', self)
-        next_button.clicked.connect(lambda: self.changePage(1))
-        pagination_layout.addWidget(next_button)
-        
+        self.next_button = QPushButton('>', self)
+        self.next_button.clicked.connect(lambda: self.changePage(1))
+        pagination_layout.addWidget(self.next_button)
+
         self.address_field = QLineEdit(self)
         self.address_field.setReadOnly(True)
         sidebar_layout.addWidget(self.address_field)
@@ -183,7 +186,21 @@ class ImageGrid(QWidget):
             self.dir_path = dir_path  # Store the selected directory path
             self.show_path.setText(dir_path)
             ImageGrid.last_dir_path = dir_path
+    
+    def get_max_page_num(self):
+        return math.floor(self.num_of_all_images / self.images_per_page)
 
+    def change_direction_visibility(self, current_page):
+        if current_page == 0:
+            self.prev_button.setEnabled(False)
+        else:
+            self.prev_button.setEnabled(True)
+
+        if current_page == self.get_max_page_num():
+            self.next_button.setEnabled(False)
+        else:
+            self.next_button.setEnabled(True)
+        
     def extractImages(self):
         if not hasattr(self, 'dir_path') or not self.dir_path:
             return
@@ -198,6 +215,9 @@ class ImageGrid(QWidget):
         extract_images_from_directory(self.dir_path, output_folder, size_limit, page_limit)
 
         self.extracted_image_paths = [os.path.join(output_folder, file) for file in os.listdir(output_folder) if file.endswith(('.png', '.jpg', '.jpeg'))]
+        
+        self.num_of_all_images = len(self.extracted_image_paths)
+
         self.page = 0
         self.updateGrid()
 
@@ -244,8 +264,8 @@ class ImageGrid(QWidget):
 
         # Use the extracted image paths if extraction has occurred
         image_paths_to_display = self.extracted_image_paths or self.image_paths
-        start = self.page * self.page_size
-        end = min(start + self.page_size, len(image_paths_to_display))
+        start = self.page * self.images_per_page
+        end = min(start + self.images_per_page, len(image_paths_to_display))
 
         container_width = self.grid.parent().width() or 500
         self.num_images_per_row = max(container_width // self.max_label_size, 1)
@@ -254,11 +274,13 @@ class ImageGrid(QWidget):
             pixmap = self.load_image(img_path)
 
             # Scale pixmap to fit self.max_label_size while maintaining aspect ratio
-            scaled_pixmap = pixmap.scaled(self.max_label_size, self.max_label_size, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+            scaled_pixmap = pixmap.scaled(self.max_label_size, self.max_label_size,
+                                           Qt.KeepAspectRatio, Qt.SmoothTransformation)
 
             label = ClickableLabel(img_path)
             label.setPixmap(scaled_pixmap)
-            label.setFixedSize(min(scaled_pixmap.width(), self.max_label_size), min(scaled_pixmap.height(), self.max_label_size))
+            label.setFixedSize(min(scaled_pixmap.width(), self.max_label_size), 
+                               min(scaled_pixmap.height(), self.max_label_size))
 
             # Connect click and double-click signals
             label.clicked.connect(lambda path=img_path: self.onImageClicked(path))
@@ -271,6 +293,7 @@ class ImageGrid(QWidget):
     def changePage(self, direction):
         self.page += direction
         self.updateGrid()
+        self.signal_direction.emit(self.page)
         self.page_number_label.setText(f"Page {self.page + 1}")
 
     def onImageClicked(self, img_path):
