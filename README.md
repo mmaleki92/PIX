@@ -6,7 +6,7 @@ PIX is a PyQt5-based application designed to extract images from PDF documents. 
 
 > **Note:** This project is a sample application and may require further performance improvements to handle larger volumes of PDF files efficiently.
 
-![alt text](overview.gif)
+![overview](overview.gif)
 
 ## Features
 
@@ -32,7 +32,6 @@ Contributing
 
 We welcome contributions to this project! Whether you're fixing bugs, improving performance, adding new features, or improving documentation, your help is appreciated.
 How to Contribute:
-
     1. Fork the repository to your own GitHub account.
     2. Create a new branch to work on your feature or bug fix.
     3. Make your changes and commit them with clear messages.
