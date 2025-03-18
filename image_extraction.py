@@ -35,7 +35,7 @@ def save_image(image_bytes, image_output_path):
         print(f"Error saving image: {str(e)}")
         return False
 
-def process_image(doc, xref, output_folder, pdf_page_num, image_index, size_limit):
+def process_image(doc, xref, output_folder, pdf_page_num, image_index, size_limit, full_pdf_path):
     """Process a single image from a PDF document."""
     try:
         base_image = doc.extract_image(xref)
@@ -57,12 +57,14 @@ def process_image(doc, xref, output_folder, pdf_page_num, image_index, size_limi
         if save_image(image_bytes, image_output_path):
             return {
                 unique_id: {
-                    "file_name": os.path.basename(doc.name),
+                    "pdf_path": full_pdf_path,  # Store full path to PDF
+                    "file_name": os.path.basename(doc.name),  # Keep filename too for display purposes
                     "page_number": pdf_page_num,
                     "image_index": image_index,
                     "image_type": image_type,
                     "size_bytes": len(image_bytes),
-                    "path": image_output_path
+                    "path": image_output_path,
+                    "extraction_date": time.strftime("%Y-%m-%d %H:%M:%S")
                 }
             }
         return None
@@ -78,18 +80,22 @@ def process_pdf(args):
     try:
         # Update progress information
         with lock:
-            extraction_progress['current_file'] = os.path.basename(pdf_path)
+            extraction_progress['current_file'] = pdf_path  # Store full path in progress
         
         doc = fitz.open(pdf_path)
         if len(doc) > page_limit:
             doc.close()
             return metadata
         
+        # Get absolute path to ensure consistency
+        full_pdf_path = os.path.abspath(pdf_path)
+        
         for page_num, page in enumerate(doc, start=1):
             image_list = page.get_images(full=True)
             for image_index, img in enumerate(image_list, start=1):
                 xref = img[0]
-                image_metadata = process_image(doc, xref, output_folder, page_num, image_index, size_limit)
+                image_metadata = process_image(doc, xref, output_folder, page_num, image_index, 
+                                              size_limit, full_pdf_path)
                 if image_metadata:
                     metadata.update(image_metadata)
                     with lock:
@@ -123,12 +129,15 @@ def extract_images_from_directory(directory_path, output_folder, size_limit, pag
         except Exception as e:
             print(f"Error loading metadata: {str(e)}")
     
-    # Collect all PDF files
+    # Collect all PDF files recursively from directory and subdirectories
     pdf_paths = []
     for root, _, files in os.walk(directory_path):
         for file in files:
             if file.lower().endswith('.pdf'):
                 pdf_paths.append(os.path.join(root, file))
+    
+    # Print summary of found files
+    print(f"Found {len(pdf_paths)} PDF files in {directory_path} and its subdirectories")
     
     # Reset progress tracking
     extraction_progress['processed_files'] = 0
