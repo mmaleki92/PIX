@@ -41,7 +41,8 @@ class ImageExtractionWorker(QRunnable):
             extracted_images = []
             if os.path.exists(self.output_folder):
                 image_paths = os.listdir(self.output_folder)
-                extracted_images = [os.path.join(self.output_folder, file) for file in image_paths if file.endswith(('.png', '.jpg', '.jpeg'))]
+                extracted_images = [os.path.join(self.output_folder, file) for file in image_paths 
+                                   if file.endswith(('.png', '.jpg', '.jpeg'))]
             
             self.signals.result.emit(extracted_images)
         except Exception as e:
@@ -77,35 +78,40 @@ class ImagePreviewDialog(QDialog):
         layout.setSpacing(15)
 
         # Load and display the image
-        pixmap = QPixmap(image_path)
-        self.image_label = QLabel()
-        self.image_label.setAlignment(Qt.AlignCenter)
-        self.image_label.setPixmap(pixmap.scaled(650, 650, Qt.KeepAspectRatio, Qt.SmoothTransformation))
-        
-        # Add a scrollable area for large images
-        scroll_area = QScrollArea()
-        scroll_area.setWidgetResizable(True)
-        scroll_area.setWidget(self.image_label)
-        layout.addWidget(scroll_area)
+        if os.path.exists(image_path):
+            pixmap = QPixmap(image_path)
+            self.image_label = QLabel()
+            self.image_label.setAlignment(Qt.AlignCenter)
+            self.image_label.setPixmap(pixmap.scaled(650, 650, Qt.KeepAspectRatio, Qt.SmoothTransformation))
+            
+            # Add a scrollable area for large images
+            scroll_area = QScrollArea()
+            scroll_area.setWidgetResizable(True)
+            scroll_area.setWidget(self.image_label)
+            layout.addWidget(scroll_area)
 
-        # Information about the image
-        info_layout = QHBoxLayout()
-        size_label = QLabel(f"Size: {pixmap.width()}x{pixmap.height()} pixels")
-        size_label.setStyleSheet("color: #cccccc; font-style: italic;")
-        info_layout.addWidget(size_label)
-        
-        # Add file size info
-        file_info = os.stat(image_path)
-        file_size = file_info.st_size / 1024  # KB
-        if file_size > 1024:
-            file_size = f"{file_size/1024:.2f} MB"
+            # Information about the image
+            info_layout = QHBoxLayout()
+            size_label = QLabel(f"Size: {pixmap.width()}x{pixmap.height()} pixels")
+            size_label.setStyleSheet("color: #cccccc; font-style: italic;")
+            info_layout.addWidget(size_label)
+            
+            # Add file size info
+            file_info = os.stat(image_path)
+            file_size = file_info.st_size / 1024  # KB
+            if file_size > 1024:
+                file_size = f"{file_size/1024:.2f} MB"
+            else:
+                file_size = f"{file_size:.2f} KB"
+            file_size_label = QLabel(f"File size: {file_size}")
+            file_size_label.setStyleSheet("color: #cccccc; font-style: italic;")
+            info_layout.addWidget(file_size_label)
+            
+            layout.addLayout(info_layout)
         else:
-            file_size = f"{file_size:.2f} KB"
-        file_size_label = QLabel(f"File size: {file_size}")
-        file_size_label.setStyleSheet("color: #cccccc; font-style: italic;")
-        info_layout.addWidget(file_size_label)
-        
-        layout.addLayout(info_layout)
+            error_label = QLabel("Image file not found or cannot be opened")
+            error_label.setStyleSheet("color: #ff6b6b;")
+            layout.addWidget(error_label)
 
         # Button layout
         button_layout = QHBoxLayout()
@@ -181,6 +187,8 @@ class ImageGrid(QWidget):
         self.image_cache = {}
         self.use_thumbnails = True
         self.selected_label = None
+        self.page = 0
+        self.page_size = 40
         
         # Set dark theme application-wide
         self.setStyleSheet("""
@@ -250,9 +258,10 @@ class ImageGrid(QWidget):
         else:
             self.extracted_image_paths = []
             
-        self.initUI(extraction_path)
+        self.image_paths = extraction_path
+        self.initUI()
 
-    def initUI(self, image_paths):
+    def initUI(self):
         # Main layout is horizontal
         main_layout = QHBoxLayout(self)
         main_layout.setSpacing(10)
@@ -343,27 +352,24 @@ class ImageGrid(QWidget):
         self.grid = QGridLayout(container)
         self.grid.setSpacing(10)
 
-        # Pagination controls
-        self.page = 0
-        self.page_size = 40
-        self.image_paths = image_paths
-        
+        # Create pagination controls first before calling updateGrid
         pagination_layout = QHBoxLayout()
-        grid_layout.addLayout(pagination_layout)
-
+        
         prev_button = QPushButton('<', self)
         prev_button.clicked.connect(lambda: self.changePage(-1))
         pagination_layout.addWidget(prev_button)
 
-        self.page_number_label = QLabel(f"Page {self.page + 1}", self)
+        self.page_number_label = QLabel("Page 1", self)
         self.page_number_label.setAlignment(Qt.AlignCenter)
         pagination_layout.addWidget(self.page_number_label)
-        self.updateGrid()
 
         next_button = QPushButton('>', self)
         next_button.clicked.connect(lambda: self.changePage(1))
         pagination_layout.addWidget(next_button)
         
+        grid_layout.addLayout(pagination_layout)
+        
+
         # Sidebar - Image information section
         sidebar_title = QLabel("Image Information")
         sidebar_title.setStyleSheet("font-size: 16px; font-weight: bold; margin-bottom: 10px;")
@@ -446,7 +452,9 @@ class ImageGrid(QWidget):
 
         # Adjust splitter sizes (70% grid, 30% sidebar)
         splitter.setSizes([700, 300])
-
+        # Now we can safely call updateGrid
+        self.updateGrid()
+        
     def load_metadata(self, metadata_path):
         try:
             with open(metadata_path, 'r') as f:
@@ -485,6 +493,9 @@ class ImageGrid(QWidget):
         self.size_limit_input.setEnabled(False)
         self.page_limit_input.setEnabled(False)
         
+        # Reset selected label to avoid reference to deleted object
+        self.selected_label = None
+        
         # Create and start the worker
         output_folder = 'extracted_images'
         worker = ImageExtractionWorker(self.dir_path, output_folder, size_limit, page_limit)
@@ -512,11 +523,6 @@ class ImageGrid(QWidget):
         self.size_limit_input.setEnabled(True)
         self.page_limit_input.setEnabled(True)
         
-        # Show a temporary success message that will fade out
-        QApplication.processEvents()
-        time.sleep(2)  # Show success message for 2 seconds
-        self.status_label.setVisible(False)
-        
     @pyqtSlot(str)
     def extraction_error(self, error_msg):
         self.progress_bar.setVisible(False)
@@ -532,6 +538,8 @@ class ImageGrid(QWidget):
     def update_extracted_images(self, extracted_images):
         self.extracted_image_paths = extracted_images
         self.page = 0  # Reset to first page
+        # Clear any stored references to UI elements before updating the grid
+        self.selected_label = None
         self.updateGrid()  # Refresh the grid with new images
         
         # Reload metadata
@@ -575,13 +583,14 @@ class ImageGrid(QWidget):
             self.status_label.setText("Path copied to clipboard")
             self.status_label.setStyleSheet("color: #4CAF50;")
             self.status_label.setVisible(True)
-            
-            # Hide status message after 1.5 seconds
-            QApplication.processEvents()
-            time.sleep(1.5)
-            self.status_label.setVisible(False)
 
     def load_image(self, img_path):
+        if not os.path.exists(img_path):
+            # Return a placeholder for missing images
+            placeholder = QPixmap(self.max_label_size, self.max_label_size)
+            placeholder.fill(Qt.gray)
+            return placeholder
+            
         if img_path not in self.image_cache:
             try:
                 image = QPixmap(img_path)
@@ -600,19 +609,29 @@ class ImageGrid(QWidget):
         return self.image_cache[img_path]
 
     def updateGrid(self):
-        # Clear existing grid
+        # Clear existing grid and reset selected label
         for i in reversed(range(self.grid.count())):
             widget = self.grid.itemAt(i).widget()
             if widget is not None:
                 widget.deleteLater()
+        
+        self.selected_label = None
+        self.full_size_image_label.clear()
+        self.address_field.clear()
+        self.preview_button.setEnabled(False)
+        
+        # Clear form layout
+        while self.info_form.rowCount() > 0:
+            self.info_form.removeRow(0)
 
-        image_paths_to_display = self.extracted_image_paths or self.image_paths
+        image_paths_to_display = self.extracted_image_paths
         if not image_paths_to_display:
             # Show a message when no images are available
             no_images_label = QLabel("No images available.\nSelect a directory and click 'Extract' to begin.")
             no_images_label.setStyleSheet("color: #cccccc; font-size: 14px;")
             no_images_label.setAlignment(Qt.AlignCenter)
             self.grid.addWidget(no_images_label, 0, 0)
+            self.page_number_label.setText("Page 0 of 0")
             return
             
         start = self.page * self.page_size
@@ -633,28 +652,24 @@ class ImageGrid(QWidget):
             label.setPixmap(scaled_pixmap)
             label.setFixedSize(self.max_label_size, self.max_label_size)
             label.setToolTip(os.path.basename(img_path))
-
-            # Create a closure to pass the image path
-            def make_click_handler(path):
-                return lambda: self.onImageClicked(path, label)
-                
-            def make_dblclick_handler(path):
-                return lambda: self.openPreviewDialog(path)
-
-            # Connect signals
-            label.clicked.connect(make_click_handler(img_path))
-            label.double_clicked.connect(make_dblclick_handler(img_path))
+            
+            # Store image path as property on the label to avoid closure issues
+            label.img_path = img_path
+            
+            # Connect signals with direct method reference
+            label.clicked.connect(lambda label=label: self.onImageClicked(label.img_path, label))
+            label.double_clicked.connect(lambda label=label: self.openPreviewDialog(label.img_path))
 
             row = (i - 1) // self.num_images_per_row
             col = (i - 1) % self.num_images_per_row
             self.grid.addWidget(label, row, col)
-    
+            
         # Update page number display
         total_pages = max((len(image_paths_to_display) - 1) // self.page_size + 1, 1)
         self.page_number_label.setText(f"Page {self.page + 1} of {total_pages}")
 
     def changePage(self, direction):
-        image_paths_to_display = self.extracted_image_paths or self.image_paths
+        image_paths_to_display = self.extracted_image_paths
         if not image_paths_to_display:
             return
             
@@ -666,13 +681,40 @@ class ImageGrid(QWidget):
             self.updateGrid()
 
     def onImageClicked(self, img_path, clicked_label):
-        # Deselect previous label if any
-        if self.selected_label:
-            self.selected_label.setSelected(False)
+        # Make sure we have valid objects before doing anything
+        if not os.path.exists(img_path):
+            return
+            
+        # Deselect previous label if any and it still exists
+        if self.selected_label is not None:
+            try:
+                # Check if the label is still valid
+                self.selected_label.selected = False
+                self.selected_label.setStyleSheet("""
+                    ClickableLabel {
+                        border: 2px solid #555555;
+                        border-radius: 6px;
+                        padding: 4px;
+                        background-color: #2d2d30;
+                    }
+                    ClickableLabel:hover {
+                        border-color: #0098ff;
+                        background-color: #383838;
+                    }
+                """)
+            except RuntimeError:
+                # Label was deleted, just ignore
+                pass
             
         # Select the clicked label
-        clicked_label.setSelected(True)
         self.selected_label = clicked_label
+        if clicked_label is not None:
+            try:
+                clicked_label.setSelected(True)
+            except RuntimeError:
+                # Label was deleted, just ignore
+                self.selected_label = None
+                return
         
         # Update the address field
         self.address_field.setText(img_path)
